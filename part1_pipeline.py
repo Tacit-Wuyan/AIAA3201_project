@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import importlib
 import json
 import os
@@ -361,6 +361,14 @@ def save_mask_frames(mask_dir: str, masks: Sequence[np.ndarray]) -> int:
     return count
 
 
+def expand_masks_for_inpaint(masks: Sequence[np.ndarray], extra_ksize: int) -> List[np.ndarray]:
+    """Use tighter masks for evaluation and larger masks for visual inpainting."""
+    if extra_ksize <= 1:
+        return [(m > 0).astype(np.uint8) * 255 for m in masks]
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (extra_ksize, extra_ksize))
+    return [cv2.dilate((m > 0).astype(np.uint8) * 255, kernel, iterations=1) for m in masks]
+
+
 def run(args: argparse.Namespace) -> None:
     frames, fps = read_video(args.input, args.max_frames)
     if len(frames) < 2:
@@ -370,8 +378,21 @@ def run(args: argparse.Namespace) -> None:
     extractor = MaskExtractor(conf=args.conf, device=args.device, target_ids=target_ids)
     gray_prev = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
 
-    dynamic_masks: List[np.ndarray] = [np.zeros_like(gray_prev, dtype=np.uint8)]
-    persist_left = 0
+    first_det = extractor.extract(frames[0])
+    first_raw = merge_instance_masks(first_det.masks, gray_prev.shape[:2])
+    if first_raw.max() > 0:
+        first_mask = dilate_mask(first_raw, ksize=args.dilate)
+        first_mask = refine_binary_mask(
+            first_mask,
+            close_ksize=args.close_ksize,
+            open_ksize=args.open_ksize,
+            min_area=args.min_mask_area,
+        )
+    else:
+        first_mask = np.zeros_like(gray_prev, dtype=np.uint8)
+
+    dynamic_masks: List[np.ndarray] = [first_mask]
+    persist_left = args.persist_frames if first_mask.max() > 0 else 0
     for i in range(1, len(frames)):
         curr_gray = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
         det = extractor.extract(frames[i])
@@ -416,15 +437,19 @@ def run(args: argparse.Namespace) -> None:
         dynamic_masks.append(dyn)
         gray_prev = curr_gray
 
-    temporal = temporal_borrow_fill(frames, dynamic_masks, max_radius=args.temporal_radius)
-    spatial = spatial_inpaint_fallback(temporal, dynamic_masks, method=args.inpaint_method)
-    output_frames = merge_temporal_and_spatial(temporal, spatial, dynamic_masks)
+    inpaint_masks = expand_masks_for_inpaint(dynamic_masks, args.inpaint_dilate_extra)
+    temporal = temporal_borrow_fill(frames, inpaint_masks, max_radius=args.temporal_radius)
+    spatial = spatial_inpaint_fallback(temporal, inpaint_masks, method=args.inpaint_method)
+    output_frames = merge_temporal_and_spatial(temporal, spatial, inpaint_masks)
 
     os.makedirs(args.output_dir, exist_ok=True)
     write_video(os.path.join(args.output_dir, "inpainted.mp4"), output_frames, fps)
     save_masks(os.path.join(args.output_dir, "dynamic_mask.mp4"), dynamic_masks, fps)
+    save_masks(os.path.join(args.output_dir, "inpaint_mask.mp4"), inpaint_masks, fps)
     mask_dir = os.path.join(args.output_dir, "masks")
+    inpaint_mask_dir = os.path.join(args.output_dir, "inpaint_masks")
     save_mask_frames(mask_dir, dynamic_masks)
+    save_mask_frames(inpaint_mask_dir, inpaint_masks)
 
     meta = {
         "input": args.input,
@@ -433,8 +458,10 @@ def run(args: argparse.Namespace) -> None:
         "extractor_mode": extractor._mode,
         "target_class_ids": target_ids,
         "mask_dir": mask_dir,
+        "inpaint_mask_dir": inpaint_mask_dir,
         "nonzero_mask_frames": int(sum(1 for m in dynamic_masks if m.max() > 0)),
         "avg_mask_area": float(np.mean([int((m > 0).sum()) for m in dynamic_masks])),
+        "avg_inpaint_mask_area": float(np.mean([int((m > 0).sum()) for m in inpaint_masks])),
         "params": vars(args),
     }
     with open(os.path.join(args.output_dir, "run_meta.json"), "w", encoding="utf-8") as f:
@@ -466,11 +493,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--min-dynamic-area", type=int, default=120, help="If dynamic area below this, use detection fallback")
     p.add_argument("--persist-frames", type=int, default=6, help="Mask persistence window for short miss detections")
-    p.add_argument("--dilate", type=int, default=9, help="Mask dilation kernel size")
-    p.add_argument("--close-ksize", type=int, default=7, help="Mask close kernel size")
+    p.add_argument("--dilate", type=int, default=1, help="Evaluation mask dilation kernel size")
+    p.add_argument("--close-ksize", type=int, default=3, help="Evaluation mask close kernel size")
     p.add_argument("--open-ksize", type=int, default=3, help="Mask open kernel size")
     p.add_argument("--min-mask-area", type=int, default=120, help="Minimum connected component area")
     p.add_argument("--temporal-radius", type=int, default=30, help="Temporal search radius")
+    p.add_argument("--inpaint-dilate-extra", type=int, default=9, help="Extra dilation only for inpainting masks")
     p.add_argument("--inpaint-method", type=str, default="telea", choices=["telea", "ns"])
     return p
 
@@ -478,4 +506,5 @@ def build_parser() -> argparse.ArgumentParser:
 if __name__ == "__main__":
     parser = build_parser()
     run(parser.parse_args())
+
 

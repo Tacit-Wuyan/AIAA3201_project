@@ -1,45 +1,42 @@
 ﻿# Video Object Removal and Inpainting
 
-Course project for video object removal. The repository contains three parts:
+Course project for video object removal and inpainting. This repository contains three parts:
 
-- Part 1: a traditional computer vision baseline.
-- Part 2: a reproduced SOTA-style pipeline using SAM2 masks and ProPainter inpainting.
-- Part 3: an exploration that improves the Part 2 mask generation strategy.
+- Part 1: traditional baseline using object segmentation, motion filtering, temporal smoothing, and OpenCV inpainting.
+- Part 2: SOTA-style reproduction using YOLO prompts, SAM2 video mask propagation, and ProPainter.
+- Part 3: exploration / ablation branch for refined mask generation.
 
-Recommended final commands are provided in the "How to Run" section. Part 2 outputs are prefixed with `part2_`; Part 3 outputs are prefixed with `part3_`.
-
-The repository is intentionally kept GitHub-friendly. Large generated outputs, model weights, caches, and third-party repositories are not committed.
+The repository is kept GitHub-friendly. Large generated outputs, model weights, caches, and third-party repositories are not committed.
 
 ## Repository Structure
 
 ```text
 .
-|-- part1_pipeline.py               # Part 1: traditional baseline
-|-- part2_pipeline.py               # Part 2: SAM2 + ProPainter runner
-|-- part3_pipeline.py               # Part 3: refined/ablation entry point
-|-- evaluate_metrics.py             # JM/JR mask metrics and PSNR/SSIM video metrics
+|-- part1_pipeline.py               # Part 1 baseline
+|-- part2_pipeline.py               # Part 2 SAM2 + ProPainter runner
+|-- part3_pipeline.py               # Part 3 refined/ablation entry point
+|-- evaluate_metrics.py             # JM/JR and optional PSNR/SSIM evaluation
 |-- requirements.txt                # Python dependencies for project scripts
 |-- configs/
-|   |-- part2_example.yaml          # Main SAM2 + ProPainter setting
+|   |-- part2_example.yaml          # Final Part 2 SAM2 + ProPainter setting
 |   |-- part3_baseline_persononly.yaml
 |   |-- part3_dynamic_nomorph.yaml
 |   |-- part3_refined_dynamic_objects.yaml
 |   `-- part3_dynamic_aggressive.yaml
 |-- tools/
-|   |-- sam2_auto_mask.py           # YOLO prompt selection + SAM2 video propagation
-|   `-- propainter_adapter.py       # Adapter that calls ProPainter
+|   |-- sam2_auto_mask.py           # YOLO prompt selection + SAM2 propagation
+|   `-- propainter_adapter.py       # ProPainter adapter
 |-- data/
 |   |-- sample/
 |   |   |-- bmx-trees.mp4
 |   |   `-- tennis.mp4
 |   `-- wild/
 |       `-- gymnastics_easy_long_12s_720p.mp4
+|-- assets/                         # Flowcharts and qualitative result figures
 `-- outputs/                        # Generated locally; ignored by git
 ```
 
 ## Method Flowcharts
-
-These flowcharts summarize the technical roadmap used in the report.
 
 ### Overall Roadmap
 
@@ -56,40 +53,42 @@ These flowcharts summarize the technical roadmap used in the report.
 ### Part 3: Mask Refinement and Ablation
 
 ![Part 3 flowchart](assets/flowchart_part3.png)
+
 ## Method Summary
 
 ### Part 1: Traditional Baseline
 
-`part1_pipeline.py` implements a classical baseline:
+`part1_pipeline.py` implements a transparent baseline:
 
-- Detect candidate foreground objects with YOLOv8 segmentation when available.
-- Estimate frame-to-frame motion with sparse optical flow.
-- Keep dynamic object regions using motion consistency.
-- Refine masks with dilation and temporal smoothing.
-- Remove the object using OpenCV inpainting.
-
-This part is designed as a transparent baseline rather than a SOTA method.
+- Detect candidate object regions with YOLOv8 segmentation when available.
+- Estimate motion with sparse and dense optical flow.
+- Keep regions that are consistent with dynamic foreground motion.
+- Apply temporal persistence and morphology to stabilize masks.
+- Use two masks: a tighter evaluation mask in `masks/`, and a larger inpainting mask in `inpaint_masks/` to reduce visible object residues.
+- Remove the target region using OpenCV inpainting.
 
 ### Part 2: SOTA Reproduction
 
-`part2_pipeline.py` runs a modular SOTA-style pipeline:
+`part2_pipeline.py` runs the main SOTA-style pipeline:
 
-- Mask backend: SAM2, driven by YOLO prompt boxes from selected frames.
-- Inpainting backend: ProPainter.
-- The command templates are stored in `configs/part2_example.yaml`.
+- YOLO detects prompt boxes on selected frames.
+- SAM2 propagates masks through the video.
+- Tight SAM2 masks are saved to `masks/` for JM/JR evaluation.
+- Enlarged masks are saved to `inpaint_masks/` and sent to ProPainter for cleaner object removal.
+- ProPainter produces the final restored video.
 
-The final Part 2 setting targets dynamic objects such as people, bicycles, sports balls, and tennis rackets, because the project asks for removing the moving object/activity rather than only the human body.
+The final Part 2 setting targets dynamic activity objects such as people, bicycles, sports balls, and tennis rackets, because the project asks for removing the moving object/activity rather than only the visible human body.
 
 ### Part 3: Exploration / Optimization
 
-`part3_pipeline.py` is a thin entry point for the Part 3 exploration. It uses the same execution engine as Part 2 but should be run with the Part 3 configs:
+`part3_pipeline.py` is a thin entry point for Part 3 experiments. It reuses the Part 2 execution engine but changes the mask-generation configuration.
+
+Available configs:
 
 - `part3_baseline_persononly.yaml`: conservative person-only baseline.
 - `part3_dynamic_nomorph.yaml`: dynamic object classes without mask morphology.
-- `part3_refined_dynamic_objects.yaml`: recommended setting; dynamic classes plus balanced dilation/closing.
+- `part3_refined_dynamic_objects.yaml`: recommended balanced setting.
 - `part3_dynamic_aggressive.yaml`: stronger mask expansion for ablation.
-
-The recommended final Part 3 setting is `part3_refined_dynamic_objects.yaml`, because it improves object coverage while avoiding excessive over-masking.
 
 ## Installation
 
@@ -102,15 +101,13 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-For CUDA, install the PyTorch build that matches your GPU/CUDA version before running the full SAM2 + ProPainter pipeline.
+For CUDA, install the PyTorch build that matches your GPU/CUDA version before running SAM2 + ProPainter.
 
 ## External Dependencies for Part 2 / Part 3
 
 Part 1 can run with the base dependencies. Part 2 and Part 3 require SAM2 and ProPainter.
 
 ### Install SAM2
-
-One common local setup is:
 
 ```powershell
 mkdir third_party
@@ -122,7 +119,7 @@ python -m pip install -e .
 cd ..\..
 ```
 
-If CUDA extension compilation is available on your machine, you may omit `SAM2_BUILD_CUDA=0`.
+If CUDA extension compilation works on your machine, `SAM2_BUILD_CUDA=0` can be omitted.
 
 ### Install ProPainter
 
@@ -148,17 +145,12 @@ $env:PROPAINTER_EXTRA_ARGS='--resize_ratio 0.5 --subvideo_length 30 --neighbor_l
 
 ## Model Weights
 
-Model weights are not committed to keep this repository lightweight.
+Model weights are not committed:
 
-- YOLOv8: `ultralytics` automatically downloads `yolov8n.pt` / `yolov8n-seg.pt` on first use.
-- SAM2: installed through the official `facebookresearch/sam2` repository; checkpoints are downloaded by SAM2/Hugging Face cache when `SAM2VideoPredictor.from_pretrained(...)` is called.
-- ProPainter: download pretrained weights following the official ProPainter instructions and keep them inside your local ProPainter repository.
+- YOLOv8 weights are downloaded automatically by `ultralytics` on first use.
+- SAM2 checkpoints are downloaded through the Hugging Face cache when `SAM2VideoPredictor.from_pretrained(...)` is called.
+- ProPainter weights should be downloaded following the official ProPainter repository.
 
-If your ProPainter repository is outside this project, set:
-
-```powershell
-$env:PROPAINTER_REPO='D:\path\to\ProPainter'
-```
 ## How to Run
 
 All commands should be run from the repository root.
@@ -167,20 +159,26 @@ All commands should be run from the repository root.
 
 ```powershell
 python part1_pipeline.py `
-  --input "data\wild\gymnastics_easy_long_12s_720p.mp4" `
-  --output-dir "outputs\part1_wild_gymnastics" `
+  --input "data\sample\bmx-trees.mp4" `
+  --output-dir "outputs\part1_bmx_trees" `
   --device cuda:0 `
   --target-classes "person,bicycle,sports ball,tennis racket" `
-  --motion-thresh 1.5 `
-  --dilate 13 `
-  --temporal-radius 30
+  --motion-thresh 1.0 `
+  --dense-motion-thresh 0.8 `
+  --dilate 1 `
+  --close-ksize 3 `
+  --open-ksize 3 `
+  --temporal-radius 30 `
+  --inpaint-dilate-extra 11
 ```
 
 Main outputs:
 
 - `outputs/.../dynamic_mask.mp4`
+- `outputs/.../inpaint_mask.mp4`
 - `outputs/.../inpainted.mp4`
-- `outputs/.../masks/mask_00000.png`, `mask_00001.png`, ...
+- `outputs/.../masks/`
+- `outputs/.../inpaint_masks/`
 - `outputs/.../run_meta.json`
 
 ### Part 2 Example: SAM2 + ProPainter
@@ -188,23 +186,26 @@ Main outputs:
 ```powershell
 python part2_pipeline.py `
   --input "data\sample\bmx-trees.mp4" `
-  --output-dir "outputs\part2_bmx_sam2_propainter" `
+  --output-dir "outputs\part2_bmx_trees" `
   --mask-backend sam2 `
   --inpaint-backend propainter `
   --config "configs\part2_example.yaml" `
   --device cuda:0 `
-  --fallback-opencv
+  --inpaint-mask-dilate-extra 11 `
+  --inpaint-mask-close 5
 ```
 
 Main outputs:
 
 - `outputs/.../part2_masks.mp4`
+- `outputs/.../part2_inpaint_masks.mp4`
 - `outputs/.../part2_inpainted.mp4`
-- `outputs/.../part2_run_meta.json`
 - `outputs/.../masks/`
+- `outputs/.../inpaint_masks/`
 - `outputs/.../inpaint_frames/`
+- `outputs/.../part2_run_meta.json`
 
-### Part 3 Example: Refined Dynamic Object Masks
+### Part 3 Example
 
 ```powershell
 python part3_pipeline.py `
@@ -216,44 +217,29 @@ python part3_pipeline.py `
   --device cuda:0
 ```
 
-Main outputs:
-
-- `outputs/.../part3_masks.mp4`
-- `outputs/.../part3_inpainted.mp4`
-- `outputs/.../part3_run_meta.json`
-- `outputs/.../masks/`
-- `outputs/.../inpaint_frames/`
-
-To compare ablations, replace the config with:
-
-```text
-configs\part3_baseline_persononly.yaml
-configs\part3_dynamic_nomorph.yaml
-configs\part3_dynamic_aggressive.yaml
-```
-
 ## Dataset Mapping
 
-The project requirement asks for:
+Mandatory datasets used in this project:
 
 - Wild Video: `data/wild/gymnastics_easy_long_12s_720p.mp4`
-- Sample Data: `data/sample/bmx-trees.mp4` and `data/sample/tennis.mp4`
-- DAVIS Dataset: optional/recommended for extra evaluation if ground-truth masks are available
+- Sample Data: `data/sample/bmx-trees.mp4`
+- Sample Data: `data/sample/tennis.mp4`
 
+DAVIS masks can be used when available for quantitative mask evaluation.
 
 ## Visual Results
 
-The following figures are generated from existing input/output videos. Red overlays show the predicted removal masks.
+The following figures compare original frames, ground-truth masks when available, Part 1 masks/results, and Part 2 masks/results.
 
-### Mandatory Sample: BMX-Trees
+### BMX-Trees
 
 ![BMX qualitative results](assets/bmx_results.png)
 
-### Mandatory Sample: Tennis
+### Tennis
 
 ![Tennis qualitative results](assets/tennis_results.png)
 
-### Mandatory Wild Video: Gymnastics
+### Wild Gymnastics
 
 ![Wild gymnastics qualitative results](assets/wild_gymnastics_results.png)
 
@@ -261,9 +247,26 @@ The following figures are generated from existing input/output videos. Red overl
 
 ![Part 3 BMX ablation](assets/part3_bmx_ablation.png)
 
-## Evaluation
+## Quantitative Results
 
-### Mask Quality: JM / JR
+The course update states that quantitative metrics are not required for mandatory datasets that do not provide ground truth. Therefore:
+
+- For datasets with available GT masks, we report JM/JR.
+- For datasets without GT masks, we report qualitative comparisons only.
+- PSNR/SSIM should only be used when aligned ground-truth restored frames are available.
+
+Latest Part 1 / Part 2 mask results on datasets with GT masks:
+
+| Dataset | Method | Old JM | New JM | Old JR | New JR |
+|---|---:|---:|---:|---:|---:|
+| bmx-trees | Part 1 | 0.3557 | 0.4098 | 0.2750 | 0.4000 |
+| bmx-trees | Part 2 | 0.5056 | 0.6526 | 0.7000 | 0.9250 |
+| tennis | Part 1 | 0.6455 | 0.7822 | 0.9857 | 1.0000 |
+| tennis | Part 2 | 0.7127 | 0.9342 | 1.0000 | 1.0000 |
+
+The CSV version is stored at `assets/part12_results_summary.csv`.
+
+### Evaluate JM / JR
 
 ```powershell
 python evaluate_metrics.py `
@@ -272,15 +275,13 @@ python evaluate_metrics.py `
   --recall-thr 0.5
 ```
 
-### Video Quality: PSNR / SSIM
+### Evaluate PSNR / SSIM
 
 ```powershell
 python evaluate_metrics.py `
   --pred-frame-dir "outputs\run_name\inpaint_frames" `
   --gt-frame-dir "path\to\gt_frames"
 ```
-
-PSNR and SSIM should only be reported when aligned ground-truth frames are available.
 
 ## Notes for GitHub Upload
 
@@ -291,8 +292,4 @@ The following are intentionally ignored by git:
 - `models/` and model weights such as `.pt`, `.pth`, `.ckpt`.
 - Python caches and local virtual environments.
 
-If you need to submit processed videos for the course, upload them separately or attach them through the required submission system rather than committing all generated frames to GitHub.
-
-
-
-
+Processed videos should be submitted separately through the required course submission system rather than committed with all generated frames.

@@ -235,6 +235,43 @@ def inpaint_opencv(frame_dir: str, mask_dir: str, output_frame_dir: str, method:
     return len(frame_paths)
 
 
+def build_inpaint_masks(
+    mask_dir: str,
+    out_dir: str,
+    dilate_ksize: int = 9,
+    close_ksize: int = 3,
+    min_area: int = 80,
+) -> int:
+    ensure_dir(out_dir)
+    paths = sorted_image_paths(mask_dir)
+    if not paths:
+        raise RuntimeError(f"No masks found for inpaint-mask expansion: {mask_dir}")
+    dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate_ksize, dilate_ksize)) if dilate_ksize > 1 else None
+    ck = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_ksize, close_ksize)) if close_ksize > 1 else None
+    count = 0
+    for idx, src in enumerate(paths):
+        m = imread_any(src, cv2.IMREAD_GRAYSCALE)
+        if m is None:
+            raise RuntimeError(f"Failed to read mask for expansion: {src}")
+        out = (m > 127).astype(np.uint8) * 255
+        if dk is not None:
+            out = cv2.dilate(out, dk, iterations=1)
+        if ck is not None:
+            out = cv2.morphologyEx(out, cv2.MORPH_CLOSE, ck, iterations=1)
+        if min_area > 0:
+            num, labels, stats, _ = cv2.connectedComponentsWithStats((out > 0).astype(np.uint8), connectivity=8)
+            clean = np.zeros_like(out)
+            for cid in range(1, num):
+                if int(stats[cid, cv2.CC_STAT_AREA]) >= min_area:
+                    clean[labels == cid] = 255
+            out = clean
+        dst = os.path.join(out_dir, f"mask_{idx:05d}.png")
+        if not imwrite_any(dst, out):
+            raise RuntimeError(f"Failed to write expanded inpaint mask: {dst}")
+        count += 1
+    return count
+
+
 def compose_video_from_dir(frame_dir: str, out_video: str, fps: float) -> int:
     paths = sorted_image_paths(frame_dir)
     if not paths:
@@ -309,6 +346,9 @@ def main() -> None:
     ap.add_argument("--dilate", type=int, default=7)
     ap.add_argument("--max-frames", type=int, default=None)
     ap.add_argument("--fallback-opencv", action="store_true")
+    ap.add_argument("--inpaint-mask-dilate-extra", type=int, default=9, help="Extra dilation only for the masks sent to inpainting")
+    ap.add_argument("--inpaint-mask-close", type=int, default=3, help="Closing kernel only for inpainting masks")
+    ap.add_argument("--inpaint-mask-min-area", type=int, default=80, help="Min component area for inpainting masks")
     ap.add_argument(
         "--output-prefix",
         type=str,
@@ -328,6 +368,7 @@ def main() -> None:
     frame_dir = os.path.join(out_root, "frames")
     mask_dir = os.path.join(out_root, "masks")
     inpaint_dir = os.path.join(out_root, "inpaint_frames")
+    inpaint_mask_dir = os.path.join(out_root, "inpaint_masks")
     inpaint_video = os.path.join(out_root, "external_inpaint.mp4")
     ensure_dir(out_root)
     if os.path.exists(frame_dir):
@@ -336,6 +377,8 @@ def main() -> None:
         shutil.rmtree(mask_dir)
     if os.path.exists(inpaint_dir):
         shutil.rmtree(inpaint_dir)
+    if os.path.exists(inpaint_mask_dir):
+        shutil.rmtree(inpaint_mask_dir)
     ensure_dir(frame_dir)
     ensure_dir(mask_dir)
     ensure_dir(inpaint_dir)
@@ -354,6 +397,8 @@ def main() -> None:
         "input_video": working_input_video,
         "frame_dir": frame_dir,
         "mask_dir": mask_dir,
+        "eval_mask_dir": mask_dir,
+        "inpaint_mask_dir": inpaint_mask_dir,
         "inpaint_dir": inpaint_dir,
         "output_dir": out_root,
         "device": args.device,
@@ -381,16 +426,32 @@ def main() -> None:
         if mask_count == 0:
             raise RuntimeError(f"Mask backend '{args.mask_backend}' produced no mask files in {mask_dir}")
 
+    mask_for_inpaint_dir = mask_dir
+    inpaint_mask_count = mask_count
+    if args.inpaint_mask_dilate_extra > 1 or args.inpaint_mask_close > 1:
+        inpaint_mask_count = build_inpaint_masks(
+            mask_dir=mask_dir,
+            out_dir=inpaint_mask_dir,
+            dilate_ksize=args.inpaint_mask_dilate_extra,
+            close_ksize=args.inpaint_mask_close,
+            min_area=args.inpaint_mask_min_area,
+        )
+        mask_for_inpaint_dir = inpaint_mask_dir
+
+    inpaint_values = dict(base_values)
+    inpaint_values["mask_dir"] = mask_for_inpaint_dir
+    inpaint_values["inpaint_mask_dir"] = inpaint_mask_dir
+
     inpaint_count = 0
     if args.inpaint_backend == "opencv":
-        inpaint_count = inpaint_opencv(frame_dir, mask_dir, inpaint_dir, method="telea")
+        inpaint_count = inpaint_opencv(frame_dir, mask_for_inpaint_dir, inpaint_dir, method="telea")
     else:
         key = f"{args.inpaint_backend}_inpaint_command"
         cmd = str(cfg.get(key, "")).strip()
         if not cmd:
             raise RuntimeError(f"Missing config command: {key}")
         try:
-            run_external_command(cmd, base_values)
+            run_external_command(cmd, inpaint_values)
             inpaint_count = len(sorted_image_paths(inpaint_dir))
             if inpaint_count == 0 and os.path.exists(inpaint_video):
                 inpaint_count = extract_video_to_dir(inpaint_video, inpaint_dir)
@@ -402,12 +463,15 @@ def main() -> None:
         except Exception:
             if not args.fallback_opencv:
                 raise
-            inpaint_count = inpaint_opencv(frame_dir, mask_dir, inpaint_dir, method="telea")
+            inpaint_count = inpaint_opencv(frame_dir, mask_for_inpaint_dir, inpaint_dir, method="telea")
 
     output_video = os.path.join(out_root, f"{output_prefix}_inpainted.mp4")
     mask_video = os.path.join(out_root, f"{output_prefix}_masks.mp4")
+    inpaint_mask_video = os.path.join(out_root, f"{output_prefix}_inpaint_masks.mp4")
     compose_video_from_dir(inpaint_dir, output_video, fps)
     save_mask_video(mask_dir, mask_video, fps)
+    if mask_for_inpaint_dir != mask_dir:
+        save_mask_video(mask_for_inpaint_dir, inpaint_mask_video, fps)
 
     meta = {
         "input": input_video_abs,
@@ -418,9 +482,13 @@ def main() -> None:
         "mask_backend": args.mask_backend,
         "inpaint_backend": args.inpaint_backend,
         "mask_frames": mask_count,
+        "inpaint_mask_frames": inpaint_mask_count,
         "inpaint_frames": inpaint_count,
+        "mask_dir": mask_dir,
+        "inpaint_mask_dir": mask_for_inpaint_dir,
         "output_video": output_video,
         "mask_video": mask_video,
+        "inpaint_mask_video": inpaint_mask_video if mask_for_inpaint_dir != mask_dir else None,
         "config_file": args.config,
         "args": vars(args),
     }
