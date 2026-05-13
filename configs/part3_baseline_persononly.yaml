@@ -1,0 +1,9 @@
+﻿# Part 3 baseline: conservative person-only SAM2 masks + ProPainter.
+sam2_mask_command: "\"{python_exe}\" \"{project_root}\\tools\\sam2_auto_mask.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --device \"{device}\" --conf 0.5 --target-classes \"person\" --prompt-interval 20 --max-prompt-frames 12 --max-objs-per-prompt-frame 1 --min-box-area-ratio 0.0008 --max-box-area-ratio 0.65 --nms-iou 0.6 --mask-dilate 0 --mask-close 0 --mask-open 0 --min-mask-area 0 --yolo-fallback --fallback-min-area 100"
+track_anything_mask_command: ""
+vggt4d_mask_command: ""
+custom_mask_command: ""
+propainter_inpaint_command: "\"{python_exe}\" \"{project_root}\\tools\\propainter_adapter.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --inpaint-dir \"{inpaint_dir}\" --output-dir \"{output_dir}\" --inpaint-video \"{inpaint_video}\" --device \"{device}\""
+e2fgvi_inpaint_command: ""
+fgvc_inpaint_command: ""
+custom_inpaint_command: ""

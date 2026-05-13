@@ -1,0 +1,9 @@
+# Part 3 ablation: dynamic-object classes with stronger inpainting-oriented morphology.
+sam2_mask_command: "\"{python_exe}\" \"{project_root}\\tools\\sam2_auto_mask.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --device \"{device}\" --conf 0.35 --target-classes \"person,bicycle,sports ball,tennis racket\" --prompt-interval 18 --max-prompt-frames 18 --max-objs-per-prompt-frame 2 --min-box-area-ratio 0.0006 --max-box-area-ratio 0.75 --nms-iou 0.6 --mask-dilate 15 --mask-close 9 --mask-open 0 --min-mask-area 80 --yolo-fallback --fallback-min-area 80"
+track_anything_mask_command: ""
+vggt4d_mask_command: ""
+custom_mask_command: ""
+propainter_inpaint_command: "\"{python_exe}\" \"{project_root}\\tools\\propainter_adapter.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --inpaint-dir \"{inpaint_dir}\" --output-dir \"{output_dir}\" --inpaint-video \"{inpaint_video}\" --device \"{device}\""
+e2fgvi_inpaint_command: ""
+fgvc_inpaint_command: ""
+custom_inpaint_command: ""

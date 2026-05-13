@@ -1,0 +1,11 @@
+numpy>=1.23
+opencv-python>=4.8
+ultralytics>=8.2
+pyyaml>=6.0
+torch>=2.0
+torchvision>=0.15
+tqdm>=4.66
+imageio>=2.31
+imageio-ffmpeg>=0.4
+huggingface-hub>=0.23
+decord>=0.6.0
