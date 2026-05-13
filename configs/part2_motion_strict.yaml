@@ -1,0 +1,33 @@
+﻿# External command templates for Part 2.
+# Placeholders:
+# - {input_video}
+# - {frame_dir}
+# - {mask_dir}
+# - {inpaint_dir}
+# - {output_dir}
+# - {device}
+# - {project_root}
+# - {python_exe}
+# - {inpaint_video}
+#
+# Recommended local layout:
+#   <project_root>/third_party/ProPainter
+# Set env var if needed:
+#   set PROPAINTER_REPO=D:\path\to\ProPainter
+#
+# SAM2 note:
+#   This command uses local script tools/sam2_auto_mask.py, which requires:
+#   1) pip install sam2 (or pip install -e <sam2_repo>)
+#   2) ultralytics installed
+
+sam2_mask_command: "\"{python_exe}\" \"{project_root}\\tools\\sam2_auto_mask.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --device \"{device}\" --conf 0.35 --target-classes \"person,bicycle,sports ball,tennis racket\" --prompt-interval 18 --max-prompt-frames 18 --max-objs-per-prompt-frame 8 --min-box-area-ratio 0.0006 --max-box-area-ratio 0.75 --nms-iou 0.6 --prompt-filter motion --motion-prompt-topk 1 --motion-score-thresh 2.0 --motion-box-padding 0.02 --mask-dilate 0 --mask-close 3 --mask-open 0 --min-mask-area 80"
+track_anything_mask_command: ""
+vggt4d_mask_command: ""
+custom_mask_command: ""
+
+propainter_inpaint_command: "\"{python_exe}\" \"{project_root}\\tools\\propainter_adapter.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --inpaint-dir \"{inpaint_dir}\" --output-dir \"{output_dir}\" --inpaint-video \"{inpaint_video}\" --device \"{device}\""
+e2fgvi_inpaint_command: ""
+fgvc_inpaint_command: ""
+custom_inpaint_command: ""
+
+

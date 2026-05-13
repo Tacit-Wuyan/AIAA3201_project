@@ -1,0 +1,5 @@
+variant,label,frames,avg_area,min_area,max_area,area_cv,mean_abs_area_delta,avg_motion_gate,avg_identity_added_area,temporal_recoveries,temporal_clips
+raw_sam2,Raw SAM2,84,158683.226,147116,168593,0.03276,1490.133,0.0,0.0,0,0
+motion_core,Motion core,84,21608.643,992,40203,0.6014,5974.663,5.6594,0.0,0,26
+motion_core_temporal,Core + temporal,84,36889.048,19220,77305,0.26245,6233.361,5.6594,0.0,12,0
+full_adaptive_identity,Full adaptive,84,38933.643,19038,101945,0.42724,7257.096,6.0079,9904.929,6,0

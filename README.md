@@ -4,7 +4,7 @@ Course project for video object removal and inpainting. This repository contains
 
 - Part 1: traditional baseline using object segmentation, motion filtering, temporal smoothing, and OpenCV inpainting.
 - Part 2: SOTA-style reproduction using YOLO prompts, SAM2 video mask propagation, and ProPainter.
-- Part 3: exploration / ablation branch for refined mask generation.
+- Part 3: adaptive motion-aware mask refinement with target continuity and ablation analysis.
 
 The repository is kept GitHub-friendly. Large generated outputs, model weights, caches, and third-party repositories are not committed.
 
@@ -14,18 +14,22 @@ The repository is kept GitHub-friendly. Large generated outputs, model weights, 
 .
 |-- part1_pipeline.py               # Part 1 baseline
 |-- part2_pipeline.py               # Part 2 SAM2 + ProPainter runner
-|-- part3_pipeline.py               # Part 3 refined/ablation entry point
+|-- part3_pipeline.py               # Part 3 adaptive refinement runner
 |-- evaluate_metrics.py             # JM/JR and optional PSNR/SSIM evaluation
 |-- requirements.txt                # Python dependencies for project scripts
 |-- configs/
 |   |-- part2_example.yaml          # Final Part 2 SAM2 + ProPainter setting
+|   |-- part2_motion_aware.yaml     # Motion-aware prompt-filter variant
+|   |-- part2_motion_strict.yaml    # Stricter motion-aware prompt-filter variant
+|   |-- part3_adaptive_motion_refinement.yaml
 |   |-- part3_baseline_persononly.yaml
 |   |-- part3_dynamic_nomorph.yaml
 |   |-- part3_refined_dynamic_objects.yaml
 |   `-- part3_dynamic_aggressive.yaml
 |-- tools/
 |   |-- sam2_auto_mask.py           # YOLO prompt selection + SAM2 propagation
-|   `-- propainter_adapter.py       # ProPainter adapter
+|   |-- propainter_adapter.py       # ProPainter adapter
+|   `-- part3_ablation.py           # Mask-only Part 3 ablation runner
 |-- data/
 |   |-- sample/
 |   |   |-- bmx-trees.mp4
@@ -79,16 +83,19 @@ The repository is kept GitHub-friendly. Large generated outputs, model weights, 
 
 The final Part 2 setting targets dynamic activity objects such as people, bicycles, sports balls, and tennis rackets, because the project asks for removing the moving object/activity rather than only the visible human body.
 
-### Part 3: Exploration / Optimization
+### Part 3: Adaptive Mask Refinement
 
-`part3_pipeline.py` is a thin entry point for Part 3 experiments. It reuses the Part 2 execution engine but changes the mask-generation configuration.
+`part3_pipeline.py` is a standalone Part 3 runner. It still uses SAM2 and ProPainter as external backends, but inserts an explicit refinement stage between raw mask generation and inpainting:
 
-Available configs:
+- Generate broad raw SAM2 masks for dynamic objects.
+- Estimate optical-flow motion maps.
+- Use motion-core filtering to suppress static background false positives.
+- Adapt the motion threshold according to raw-mask area.
+- Maintain target identity with centroid, velocity, and overlap continuity.
+- Apply temporal recovery to avoid sudden under-masking.
+- Build a slightly larger inpainting mask for ProPainter.
 
-- `part3_baseline_persononly.yaml`: conservative person-only baseline.
-- `part3_dynamic_nomorph.yaml`: dynamic object classes without mask morphology.
-- `part3_refined_dynamic_objects.yaml`: recommended balanced setting.
-- `part3_dynamic_aggressive.yaml`: stronger mask expansion for ablation.
+The recommended Part 3 config is `part3_adaptive_motion_refinement.yaml`. Older Part 3 configs are kept as baseline variants.
 
 ## Installation
 
@@ -209,12 +216,39 @@ Main outputs:
 
 ```powershell
 python part3_pipeline.py `
-  --input "data\sample\bmx-trees.mp4" `
-  --output-dir "outputs\part3_bmx_refined_dynamic" `
+  --input "data\sample\davis_extra\davis_breakdance.mp4" `
+  --output-dir "outputs\part3_breakdance_adaptive" `
   --mask-backend sam2 `
   --inpaint-backend propainter `
-  --config "configs\part3_refined_dynamic_objects.yaml" `
-  --device cuda:0
+  --config "configs\part3_adaptive_motion_refinement.yaml" `
+  --device cuda:0 `
+  --motion-core-percentile 85 `
+  --motion-core-dilate 25 `
+  --area-drop-ratio 0.45 `
+  --temporal-recovery-dilate 81 `
+  --inpaint-mask-dilate-extra 13 `
+  --inpaint-mask-close 5
+```
+
+Part 3 main outputs:
+
+- `outputs/.../part3_raw_masks.mp4`
+- `outputs/.../part3_masks.mp4`
+- `outputs/.../part3_inpaint_masks.mp4`
+- `outputs/.../part3_inpainted.mp4`
+- `outputs/.../part3_run_meta.json`
+
+### Part 3 Ablation Example
+
+After a Part 3 run has produced `raw_masks/`, the ablation script compares raw SAM2, motion-core only, motion-core + temporal recovery, and full adaptive identity refinement without rerunning SAM2 or ProPainter:
+
+```powershell
+python tools\part3_ablation.py `
+  --input-video "data\sample\davis_extra\davis_breakdance.mp4" `
+  --raw-mask-dir "outputs\part3_breakdance_adaptive\raw_masks" `
+  --output-dir "outputs\part3_breakdance_ablation" `
+  --output-figure "assets\part3_breakdance_ablation.png" `
+  --frames "8,24,42,62"
 ```
 
 ## Dataset Mapping
@@ -225,7 +259,13 @@ Mandatory datasets used in this project:
 - Sample Data: `data/sample/bmx-trees.mp4`
 - Sample Data: `data/sample/tennis.mp4`
 
-DAVIS masks can be used when available for quantitative mask evaluation.
+Additional optional DAVIS 2017 examples for qualitative stress testing:
+
+- Easy human motion: `data/sample/davis_extra/davis_walking.mp4`
+- Human-object interaction: `data/sample/davis_extra/davis_bike-packing.mp4`
+- Fast non-rigid motion: `data/sample/davis_extra/davis_breakdance.mp4`
+
+DAVIS masks can be used when available for quantitative mask evaluation. The optional MP4 examples above are included as lightweight qualitative examples; quantitative JM/JR should only be reported when matching GT masks are available.
 
 ## Visual Results
 
@@ -246,6 +286,16 @@ The following figures compare original frames, ground-truth masks when available
 ### Part 3 Mask Refinement Ablation
 
 ![Part 3 BMX ablation](assets/part3_bmx_ablation.png)
+
+### Part 3 DAVIS Breakdance Refinement
+
+![Part 3 breakdance final comparison](assets/part3_breakdance_final_comparison.png)
+
+### Part 3 DAVIS Breakdance Ablation
+
+![Part 3 breakdance ablation](assets/part3_breakdance_ablation.png)
+
+The ablation CSV is stored at `assets/part3_breakdance_ablation_summary.csv`.
 
 ## Quantitative Results
 
@@ -293,3 +343,4 @@ The following are intentionally ignored by git:
 - Python caches and local virtual environments.
 
 Processed videos should be submitted separately through the required course submission system rather than committed with all generated frames.
+

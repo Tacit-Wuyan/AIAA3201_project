@@ -2,7 +2,7 @@
 import contextlib
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -155,6 +155,61 @@ def nms_xyxy(boxes: np.ndarray, scores: np.ndarray, iou_thresh: float) -> np.nda
     return np.asarray(keep, dtype=np.int32)
 
 
+
+def score_boxes_by_motion(
+    prev_gray: Optional[np.ndarray],
+    curr_gray: np.ndarray,
+    boxes_xyxy: np.ndarray,
+    padding_ratio: float = 0.05,
+) -> np.ndarray:
+    """Score candidate prompt boxes by local motion strength.
+
+    Crowded videos often contain many people, but only a few are the removal
+    target. A class-only prompt policy may select static spectators. This
+    motion score keeps boxes whose interior optical flow is strong.
+    """
+    if boxes_xyxy.shape[0] == 0:
+        return np.zeros((0,), dtype=np.float32)
+    if prev_gray is None:
+        return np.zeros((boxes_xyxy.shape[0],), dtype=np.float32)
+
+    flow = cv2.calcOpticalFlowFarneback(
+        prev_gray,
+        curr_gray,
+        None,
+        pyr_scale=0.5,
+        levels=3,
+        winsize=21,
+        iterations=3,
+        poly_n=5,
+        poly_sigma=1.2,
+        flags=0,
+    )
+    mag = np.sqrt(flow[:, :, 0] ** 2 + flow[:, :, 1] ** 2)
+    h, w = curr_gray.shape[:2]
+    scores: List[float] = []
+    for box in boxes_xyxy:
+        x1, y1, x2, y2 = [float(v) for v in box]
+        bw = max(1.0, x2 - x1)
+        bh = max(1.0, y2 - y1)
+        pad_x = bw * padding_ratio
+        pad_y = bh * padding_ratio
+        xx1 = max(0, int(round(x1 - pad_x)))
+        yy1 = max(0, int(round(y1 - pad_y)))
+        xx2 = min(w, int(round(x2 + pad_x)))
+        yy2 = min(h, int(round(y2 + pad_y)))
+        if xx2 <= xx1 or yy2 <= yy1:
+            scores.append(0.0)
+            continue
+        local = mag[yy1:yy2, xx1:xx2]
+        if local.size == 0:
+            scores.append(0.0)
+            continue
+        # Percentile is more robust than mean when the box includes background.
+        scores.append(float(np.percentile(local, 75)))
+    return np.asarray(scores, dtype=np.float32)
+
+
 def detect_boxes_on_frame(
     frame_bgr: np.ndarray,
     yolo,
@@ -214,6 +269,10 @@ def collect_prompt_boxes(
     min_box_area_ratio: float,
     max_box_area_ratio: float,
     nms_iou: float,
+    prompt_filter: str,
+    motion_prompt_topk: int,
+    motion_score_thresh: float,
+    motion_box_padding: float,
 ) -> List[Tuple[int, np.ndarray]]:
     from ultralytics import YOLO
 
@@ -228,12 +287,14 @@ def collect_prompt_boxes(
     frame_idx = 0
     sampled = 0
     interval = max(1, int(prompt_interval))
+    prev_gray: Optional[np.ndarray] = None
 
     while True:
         ok, frame = cap.read()
         if not ok:
             break
 
+        curr_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         should_sample = frame_idx == 0 or (frame_idx % interval == 0)
         if should_sample:
             boxes = detect_boxes_on_frame(
@@ -247,12 +308,31 @@ def collect_prompt_boxes(
                 max_box_area_ratio=max_box_area_ratio,
                 nms_iou=nms_iou,
             )
-            if boxes.shape[0] > 0:
-                for box in boxes:
+            selected = boxes
+            if prompt_filter == "motion" and boxes.shape[0] > 0:
+                scores = score_boxes_by_motion(
+                    prev_gray=prev_gray,
+                    curr_gray=curr_gray,
+                    boxes_xyxy=boxes,
+                    padding_ratio=motion_box_padding,
+                )
+                order = np.argsort(-scores)
+                keep: List[int] = []
+                for idx in order:
+                    if float(scores[int(idx)]) < motion_score_thresh:
+                        continue
+                    keep.append(int(idx))
+                    if motion_prompt_topk > 0 and len(keep) >= motion_prompt_topk:
+                        break
+                selected = boxes[np.asarray(keep, dtype=np.int32)] if keep else np.zeros((0, 4), dtype=np.float32)
+
+            if selected.shape[0] > 0:
+                for box in selected:
                     prompts.append((frame_idx, box.astype(np.float32)))
                 sampled += 1
                 if sampled >= max_prompt_frames:
                     break
+        prev_gray = curr_gray
         frame_idx += 1
 
     cap.release()
@@ -322,6 +402,16 @@ def main() -> None:
     ap.add_argument("--min-box-area-ratio", type=float, default=0.0008)
     ap.add_argument("--max-box-area-ratio", type=float, default=0.65)
     ap.add_argument("--nms-iou", type=float, default=0.6)
+    ap.add_argument(
+        "--prompt-filter",
+        type=str,
+        default="class",
+        choices=["class", "motion"],
+        help="Use class-only prompt boxes or keep only locally moving boxes",
+    )
+    ap.add_argument("--motion-prompt-topk", type=int, default=1, help="Max moving prompt boxes per sampled frame")
+    ap.add_argument("--motion-score-thresh", type=float, default=1.0, help="Minimum local flow score for motion prompts")
+    ap.add_argument("--motion-box-padding", type=float, default=0.05, help="Padding ratio when scoring box motion")
     ap.add_argument("--mask-dilate", type=int, default=11)
     ap.add_argument("--mask-close", type=int, default=7)
     ap.add_argument("--mask-open", type=int, default=0)
@@ -359,7 +449,12 @@ def main() -> None:
         min_box_area_ratio=args.min_box_area_ratio,
         max_box_area_ratio=args.max_box_area_ratio,
         nms_iou=args.nms_iou,
+        prompt_filter=args.prompt_filter,
+        motion_prompt_topk=args.motion_prompt_topk,
+        motion_score_thresh=args.motion_score_thresh,
+        motion_box_padding=args.motion_box_padding,
     )
+    print(f"Prompt filter: {args.prompt_filter}, prompts collected: {len(prompt_pairs)}")
 
     if len(prompt_pairs) == 0:
         total = max(1, n_frames)
