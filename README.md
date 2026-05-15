@@ -1,4 +1,4 @@
-﻿# Video Object Removal and Inpainting
+# Video Object Removal and Inpainting
 
 Course project for video object removal and inpainting. This repository contains three parts:
 
@@ -12,33 +12,53 @@ The repository is kept GitHub-friendly. Large generated outputs, model weights, 
 
 ```text
 .
-|-- part1_pipeline.py               # Part 1 baseline
-|-- part2_pipeline.py               # Part 2 SAM2 + ProPainter runner
-|-- part3_pipeline.py               # Part 3 adaptive refinement runner
-|-- evaluate_metrics.py             # JM/JR and optional PSNR/SSIM evaluation
-|-- requirements.txt                # Python dependencies for project scripts
+|-- part1_pipeline.py                 # Part 1 traditional baseline
+|-- part2_pipeline.py                 # Part 2 SAM2 + ProPainter runner
+|-- part23_integrated_pipeline.py      # Unified Part 2 / adaptive Part 3 runner
+|-- part3_pipeline.py                 # Part 3 adaptive motion-refinement branch
+|-- part3_sam3_pipeline.py            # Part 3 SAM3 + ProPainter / DiffuEraser branch
+|-- PART3_INTEGRATION.md              # Explains how the two Part 3 branches fit together
+|-- evaluate_metrics.py               # JM/JR and optional PSNR/SSIM evaluation
+|-- requirements.txt                  # Base dependencies
+|-- requirements_part3_sam3.txt       # Optional SAM3 / DiffuEraser branch dependencies
 |-- configs/
-|   |-- part2_example.yaml          # Final Part 2 SAM2 + ProPainter setting
-|   |-- part2_motion_aware.yaml     # Motion-aware prompt-filter variant
-|   |-- part2_motion_strict.yaml    # Stricter motion-aware prompt-filter variant
+|   |-- part2_example.yaml
+|   |-- part2_motion_aware.yaml
+|   |-- part2_motion_strict.yaml
 |   |-- part3_adaptive_motion_refinement.yaml
-|   |-- part3_baseline_persononly.yaml
-|   |-- part3_dynamic_nomorph.yaml
-|   |-- part3_refined_dynamic_objects.yaml
-|   `-- part3_dynamic_aggressive.yaml
+|   `-- part3_sam3_*.yaml
 |-- tools/
-|   |-- sam2_auto_mask.py           # YOLO prompt selection + SAM2 propagation
-|   |-- propainter_adapter.py       # ProPainter adapter
-|   `-- part3_ablation.py           # Mask-only Part 3 ablation runner
+|   |-- sam2_auto_mask.py
+|   |-- sam3_auto_mask.py
+|   |-- propainter_adapter.py
+|   |-- part3_sam3_propainter_adapter.py
+|   |-- diffueraser_adapter.py
+|   |-- check_diffueraser_setup.py
+|   `-- part3_ablation.py
+|-- assets/                           # Flowcharts, metric summaries, qualitative figures
+|-- sample_results/part12_final/       # Curated Part 1 / Part 2 result videos
+|-- sample_results/part3_sam3/         # Lightweight Part 3 SAM3 preview videos
+|-- RESULTS_MANIFEST.md                # Index of included result videos and metrics
+|-- Report.pdf                         # Final compiled report
 |-- data/
 |   |-- sample/
-|   |   |-- bmx-trees.mp4
-|   |   `-- tennis.mp4
 |   `-- wild/
-|       `-- gymnastics_easy_long_12s_720p.mp4
-|-- assets/                         # Flowcharts and qualitative result figures
-`-- outputs/                        # Generated locally; ignored by git
+`-- outputs/                          # Example outputs / generated results when present
 ```
+
+
+## Included Results and Report Files
+
+For a quick index of included outputs, see `RESULTS_MANIFEST.md`.
+
+- `sample_results/part12_final/`: representative Part 1 and Part 2 processed videos for bmx-trees, tennis, and wild gymnastics.
+- `sample_results/part3_sam3/`: representative Part 3 SAM3 / DiffuEraser preview videos.
+- `assets/`: metric CSV/JSON files, DAVIS summaries, qualitative comparison figures, and flowcharts.
+- `Report.pdf`: final compiled report.
+- `report_final.tex`: final CVPR-template report source.
+- `main.bib`, `cvpr.sty`, `preamble.tex`, `ieeenat_fullname.bst`: LaTeX support files for compiling the report.
+
+The full generated frame folders are intentionally excluded from GitHub. They can be regenerated from the scripts and configs.
 
 ## Method Flowcharts
 
@@ -162,6 +182,47 @@ Model weights are not committed:
 
 All commands should be run from the repository root.
 
+### Unified Part 2 / Part 3 Runner
+
+The recommended current entry point for Part 2 and Part 3 is `part23_integrated_pipeline.py`.
+It keeps the stable Part 2 baseline and the Part 3 adaptive refinement in one interface.
+
+Part 2 baseline:
+
+```powershell
+python part23_integrated_pipeline.py `
+  --mode part2 `
+  --input "data/sample/bmx-trees.mp4" `
+  --output-dir "outputs\part2_bmx_unified" `
+  --device cuda:0 `
+  --fallback-opencv
+```
+
+Part 2 motion-strict variant:
+
+```powershell
+python part23_integrated_pipeline.py `
+  --mode part2_motion_strict `
+  --input "data/sample/bmx-trees.mp4" `
+  --output-dir "outputs\part2_bmx_motion_strict" `
+  --device cuda:0 `
+  --fallback-opencv
+```
+
+Part 3 adaptive refinement:
+
+```powershell
+python part23_integrated_pipeline.py `
+  --mode part3_adaptive `
+  --input "data/sample/bmx-trees.mp4" `
+  --output-dir "outputs\part3_bmx_adaptive" `
+  --device cuda:0 `
+  --fallback-opencv
+```
+
+The script automatically selects a mode-specific config when `--config` is omitted:
+`part2_example.yaml`, `part2_motion_strict.yaml`, or `part3_adaptive_motion_refinement.yaml`.
+
 ### Part 1 Example
 
 ```powershell
@@ -249,6 +310,62 @@ python tools\part3_ablation.py `
   --output-dir "outputs\part3_breakdance_ablation" `
   --output-figure "assets\part3_breakdance_ablation.png" `
   --frames "8,24,42,62"
+```
+
+
+### Part 3 Additional Branch: SAM3 + ProPainter / DiffuEraser
+
+The teammate Part 3 branch is integrated as a separate, clearly named route:
+
+```text
+part3_sam3_pipeline.py
+configs/part3_sam3_*.yaml
+tools/sam3_auto_mask.py
+tools/diffueraser_adapter.py
+tools/part3_sam3_propainter_adapter.py
+```
+
+This branch supports:
+
+- `--mask-backend sam3`
+- `--inpaint-backend propainter`
+- `--inpaint-backend diffueraser`
+
+Example command for the SAM3 + ProPainter route:
+
+```powershell
+python part3_sam3_pipeline.py `
+  --input "data/sample/tennis.mp4" `
+  --output-dir "outputs\part3_sam3_tennis_propainter" `
+  --mask-backend sam3 `
+  --inpaint-backend propainter `
+  --config "configs\part3_sam3_propainter_part2style.yaml" `
+  --device cuda:0 `
+  --fallback-opencv
+```
+
+Example command for the SAM3 + DiffuEraser route:
+
+```powershell
+python part3_sam3_pipeline.py `
+  --input "data/sample/tennis.mp4" `
+  --output-dir "outputs\part3_sam3_tennis_diffueraser" `
+  --mask-backend sam3 `
+  --inpaint-backend diffueraser `
+  --config "configs\part3_sam3_diffueraser_part2style.yaml" `
+  --device cuda:0 `
+  --fallback-opencv
+```
+
+The final report should use the existing result summaries in `assets/`; rerunning
+SAM3 or DiffuEraser is optional and requires separate local installations. See
+`PART3_INTEGRATION.md` for the relationship between the adaptive-refinement
+Part 3 branch and the SAM3/DiffuEraser branch.
+
+Lightweight qualitative videos from the SAM3 branch are stored in:
+
+```text
+sample_results/part3_sam3/
 ```
 
 ## Dataset Mapping
@@ -343,4 +460,5 @@ The following are intentionally ignored by git:
 - Python caches and local virtual environments.
 
 Processed videos should be submitted separately through the required course submission system rather than committed with all generated frames.
+
 
