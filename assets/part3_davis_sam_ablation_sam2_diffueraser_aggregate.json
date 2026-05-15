@@ -1,0 +1,8 @@
+{
+  "experiment": "sam2_diffueraser",
+  "num_sequences": 50,
+  "num_success": 48,
+  "num_failed": 2,
+  "mean_jm": 0.742897,
+  "mean_jr": 0.823891
+}

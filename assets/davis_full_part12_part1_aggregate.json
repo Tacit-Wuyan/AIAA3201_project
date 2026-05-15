@@ -1,0 +1,8 @@
+{
+  "part": "part1",
+  "num_sequences": 50,
+  "num_success": 37,
+  "num_failed": 0,
+  "mean_jm": 0.533421,
+  "mean_jr": 0.60716
+}

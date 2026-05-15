@@ -1,0 +1,10 @@
+sequence,method,frames_eval,gt_frames,pred_frames,JM,JR,min_iou,median_iou,source
+bike-packing,part1,69,69,69,0.6017481512062317,0.8695652173913043,0.398842982280937,0.5892377269450089,D:\cvproj\outputs\davis_extra_test\davis_bike-packing\part1\masks
+bike-packing,part2,69,69,69,0.8439837160666595,1.0,0.7547244028589123,0.8589547630857062,D:\cvproj\outputs\davis_extra_test\davis_bike-packing\part2\masks
+breakdance,part1,84,84,84,0.15290124911358247,0.0,0.08215744673925426,0.15233154596490778,D:\cvproj\outputs\davis_extra_test\davis_breakdance\part1\masks
+breakdance,part2,84,84,84,0.3453342300226506,0.0,0.2744307063286434,0.3489095667466283,D:\cvproj\outputs\davis_extra_test\davis_breakdance\part2\masks
+breakdance,part2_motion_strict,84,84,84,0.4740332508557548,0.75,0.0,0.5750460138626194,D:\cvproj\outputs\davis_extra_test\davis_breakdance\part2_motion_strict\masks
+breakdance,part3_adaptive_final,84,84,84,0.633244509954948,0.8690476190476191,0.338493789633667,0.6455107198006242,D:\cvproj\outputs\davis_extra_test\davis_breakdance\part3_adaptive_deeper_final\masks
+walking,part1,72,72,72,0.8309213769527274,1.0,0.7471211741093828,0.8318476818056741,D:\cvproj\outputs\davis_extra_test\davis_walking\part1\masks
+walking,part2,72,72,72,0.9876115861436696,1.0,0.9722549058997068,0.9889232309751392,D:\cvproj\outputs\davis_extra_test\davis_walking\part2\masks
+bike-packing,sam3_teammate_mask_video,69,69,69,0.7802386574568339,1.0,0.6836015723503671,0.813029256769035,D:\xwechat_files\wxid_tzg9eld3d37m22_9294\msg\video\2026-05\1cb6fae3671e63dd18b2b92c04d93c87.mp4

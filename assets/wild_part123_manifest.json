@@ -1,0 +1,15 @@
+{
+  "source_root": "/tmp/AIAA3201_project_main_wild_src",
+  "video_path": "/home/user/AIAA3201_project/data/wild/gymnastics_easy_long_12s_720p.mp4",
+  "output_root": "/home/user/AIAA3201_project/outputs/wild_part123_suite",
+  "max_frames": 100,
+  "device": "cuda:0",
+  "note": "Wild video has no GT; no JM/JR/PSNR/SSIM are computed.",
+  "experiments": [
+    "part1_main",
+    "part2_main_propainter",
+    "part3_sam2_diffueraser",
+    "part3_sam3_propainter",
+    "part3_sam3_diffueraser"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "source_folder": "D:\\xwechat_files\\wxid_tzg9eld3d37m22_9294\\msg\\file\\2026-05\\main_branch_part12\\main_branch_part12",
+  "num_sequences": 50,
+  "part1_ok": 37,
+  "part1_skipped": 13,
+  "part1_failed": 0,
+  "part1_mean_jm_ok": 0.533421,
+  "part1_mean_jr_ok": 0.60716,
+  "part2_ok": 48,
+  "part2_skipped": 0,
+  "part2_failed": 2,
+  "part2_mean_jm_ok": 0.742897,
+  "part2_mean_jr_ok": 0.823891,
+  "common_ok_sequences": 35,
+  "mean_delta_jm_common": 0.170608,
+  "mean_delta_jr_common": 0.175719,
+  "part2_failed_sequences": [
+    "kite-surf",
+    "kite-walk"
+  ],
+  "part1_skipped_sequences": [
+    "bear",
+    "blackswan",
+    "boat",
+    "camel",
+    "cows",
+    "dog",
+    "elephant",
+    "flamingo",
+    "goat",
+    "mallard-fly",
+    "mallard-water",
+    "rhino",
+    "train"
+  ]
+}

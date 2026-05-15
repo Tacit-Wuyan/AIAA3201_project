@@ -1,0 +1,18 @@
+# Part 3 diffusion alternative:
+# - SAM3 + YOLO11 for mask generation
+# - DiffuEraser for video inpainting
+#
+# Placeholders:
+# - {input_video}
+# - {frame_dir}
+# - {mask_dir}
+# - {inpaint_dir}
+# - {output_dir}
+# - {device}
+# - {project_root}
+# - {python_exe}
+# - {inpaint_video}
+
+sam3_mask_command: "\"{python_exe}\" \"{project_root}/tools/sam3_auto_mask.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --device \"{device}\" --yolo-model \"yolo11n.pt\" --target-classes \"person,bicycle,boat,bear,sports ball,tennis racket\" --prompt-interval 18 --text-prompt-interval 12 --init-search-sampled-frames 3 --max-prompt-frames-per-class 1 --text-prompt-max-per-class 3 --temporal-window-radius 2 --redetect-interval 12 --min-reprompt-gap 6 --yolo-constraint-padding 0.15 --anomaly-area-ratio-min 0.35 --anomaly-area-ratio-max 2.8 --anomaly-center-jump-factor 1.6 --text-guidance-match-ratio-min 0.60 --text-guidance-mean-iou-min 0.35 --text-guidance-small-area-max 0.01 --text-guidance-slenderness-max 4.5 --small-object-box-classes \"sports ball\" --small-object-box-padding 1.0 --small-object-track-window 12 --mask-dilate 5 --mask-close 3 --min-mask-area 80 --propagation-direction both --offload-video-to-cpu"
+
+diffueraser_inpaint_command: "\"{python_exe}\" \"{project_root}/tools/diffueraser_adapter.py\" --input-video \"{input_video}\" --mask-dir \"{mask_dir}\" --inpaint-dir \"{inpaint_dir}\" --output-dir \"{output_dir}\" --inpaint-video \"{inpaint_video}\" --device \"{device}\" --max-img-size 960 --mask-dilation-iter 8 --ref-stride 10 --neighbor-length 10 --subvideo-length 50"
